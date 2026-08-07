@@ -9,6 +9,22 @@ on the guest.
 **What this is not:** a Windows deployment guide. Your existing gold image is the
 starting point.
 
+**Repo layout — every script is ready to download and edit** (variables live in an
+`---- EDIT THESE ----` block at the top of each file):
+
+```text
+kit/          -> copy to C:\ProgramData\WSL-Kit\ on the gold image
+  wslconfig.template            networking profile every user receives
+  Initialize-WSL-User.ps1       per-user setup, runs at logon
+  register-satellite.sh.example paste your Satellite-generated command here
+goldimage/    -> run ON the gold image while building it
+  Enable-WSL-Offline.ps1        step 1
+  Set-CorporateDns.ps1          step 3
+  Install-LogonTask.ps1         step 4
+imagebuild/   -> run on a separate Windows build box
+  Build-GoldenImage.ps1         section 0b path B
+```
+
 **Total hands-on time:** ~45 min once you have the artifacts. Each numbered step says
 how long it takes and what "done" looks like. Do them in order. Don't skip the
 ✅ checks — every one of them catches a real failure we hit while proving this.
@@ -24,7 +40,7 @@ gold image.
 |---|---|---|---|
 | 1 | WSL MSI installer (offline) | github.com/microsoft/WSL releases | `wsl.2.7.11.0.x64.msi` |
 | 2 | RHEL 9 WSL image | **Section 0b below** — download or build, no Linux box needed | `rhel-9.7-x86_64-wsl.tar.gz` |
-| 3 | Your Satellite server's CA consumer URL | `https://<satellite-fqdn>/pub/katello-ca-consumer-latest.noarch.rpm` | — |
+| 3 | A **registration command** generated in Satellite | Satellite web UI → Hosts → Register Host (pick org, activation key, set a generous token lifetime) | one `curl … \| bash` line |
 | 4 | A Satellite **activation key** whose content view includes RHEL 9 repos | Satellite web UI → Content → Activation Keys | `ak-rhel9-dev` |
 | 5 | Your Satellite **organization NAME** (the word, not a number — see gotcha G4) | Satellite web UI → Administer → Organizations | `ExampleOrg` |
 
@@ -60,30 +76,12 @@ Use this when you want packages, users, or config **baked into** the image every
 user receives. You never leave Windows: import the official image once, change it,
 export it. The export IS your custom image.
 
-On any Windows machine with WSL enabled (your build box, not the gold image):
-
-```powershell
-# 1. Import the official image as a throwaway build instance
-wsl --import RHEL-9-build C:\wsl-build\rhel9 .\rhel-9.7-x86_64-wsl.tar.gz
-
-# 2. Customize inside it (root shell) — examples:
-wsl -d RHEL-9-build -u root
-#    dnf -y install <tools you want baked in>     (needs step-5 registration first,
-#                                                  or a reachable repo)
-#    echo -e "[user]\ndefault=vdi" > /etc/wsl.conf # default user, etc.
-#    exit
-
-# 3. CRITICAL before export: strip any registration identity (see G10)
-wsl -d RHEL-9-build -u root -- subscription-manager clean
-
-# 4. Export = your golden image; then delete the build instance
-wsl --terminate RHEL-9-build
-wsl --export RHEL-9-build .\rhel-9-golden.tar.gz
-wsl --unregister RHEL-9-build
-```
-
-Ship `rhel-9-golden.tar.gz` as the shared image in step 2 (adjust the filename in
-`Initialize-WSL-User.ps1`).
+On any Windows machine with WSL enabled (your build box, not the gold image): edit
+the variable block at the top of **`imagebuild/Build-GoldenImage.ps1`** (image paths,
+default user, packages to bake in) and run it. It imports the official image,
+applies your customizations, strips any registration identity (G10), and exports
+your golden image. Ship the export as the shared image in step 2 (match the filename
+in `kit/Initialize-WSL-User.ps1`).
 
 ✅ **Done when:** on the build box, `wsl --import test C:\wsl-build\test .\rhel-9-golden.tar.gz`
 gives a working shell — then `wsl --unregister test`.
@@ -92,15 +90,9 @@ gives a working shell — then `wsl --unregister test`.
 
 ## 1. Enable WSL on the gold image — offline (10 min + 1 reboot)
 
-As admin on the gold image (no internet needed):
-
-```powershell
-dism.exe /online /enable-feature /featurename:Microsoft-Windows-Subsystem-Linux /all /norestart
-dism.exe /online /enable-feature /featurename:VirtualMachinePlatform /all /norestart
-Restart-Computer
-# after reboot:
-msiexec /i C:\path\to\wsl.2.7.11.0.x64.msi /qn
-```
+As admin on the gold image (no internet needed): edit the MSI path at the top of
+**`goldimage/Enable-WSL-Offline.ps1`** and run it. It enables the two Windows
+features, tells you to reboot, and on the second run installs the WSL MSI.
 
 ✅ **Done when:** `wsl --version` prints a WSL version (2.x) and does NOT mention the
 Store.
@@ -110,14 +102,14 @@ Store.
 ## 2. Stage the shared kit — machine-wide, once (5 min)
 
 Everything users need lives in `C:\ProgramData` so it works for **every** user without
-per-user downloads:
+per-user downloads. Copy this repo's `kit/` folder to `C:\ProgramData\WSL-Kit\` and
+drop your image beside it:
 
 ```text
 C:\ProgramData\WSL\distros\rhel-9.7-x86_64-wsl.tar.gz   ← the shared image
 C:\ProgramData\WSL-Kit\wslconfig.template               ← networking profile (step 3)
-C:\ProgramData\WSL-Kit\satellite.env                    ← Satellite settings (step 5)
 C:\ProgramData\WSL-Kit\Initialize-WSL-User.ps1          ← per-user setup (step 4)
-C:\ProgramData\WSL-Kit\Configure-RHEL-Satellite.sh      ← in-distro registration (step 5)
+C:\ProgramData\WSL-Kit\register-satellite.sh            ← registration command (step 5)
 ```
 
 ⚠️ Keep every script **pure ASCII** — a single smart-quote or em-dash pasted from a
@@ -134,27 +126,14 @@ our proof, **no working DNS at all** for internal names. Mirrored mode makes the
 side share the Windows host's real network identity — same IP, same L2, reachable and
 resolving like any other corporate machine.
 
-`C:\ProgramData\WSL-Kit\wslconfig.template`:
-
-```ini
-[wsl2]
-networkingMode=mirrored
-dnsTunneling=true
-firewall=true
-autoProxy=true
-localhostForwarding=true
-
-[experimental]
-hostAddressLoopback=true
-```
+The profile ships as **`kit/wslconfig.template`** (mirrored mode + DNS tunneling,
+already correct — no edits needed for most sites).
 
 **And fix the Windows host's DNS order** (WSL inherits it): the corporate resolver
 must come FIRST on the adapter. A public resolver (8.8.8.8, 1.1.1.1) listed first =
-internal names randomly fail inside WSL (gotcha G5).
-
-```powershell
-Set-DnsClientServerAddress -InterfaceAlias "Ethernet0" -ServerAddresses 10.0.0.53
-```
+internal names randomly fail inside WSL (gotcha G5). Edit the resolver list at the
+top of **`goldimage/Set-CorporateDns.ps1`** and run it — it sets the order and
+proves an internal name resolves before letting you continue.
 
 ✅ **Done when:** `Resolve-DnsName <internal-fqdn>` works on the Windows host.
 
@@ -166,30 +145,13 @@ Set-DnsClientServerAddress -InterfaceAlias "Ethernet0" -ServerAddresses 10.0.0.5
 HKCU/`%LOCALAPPDATA%`). One admin installing a distro does nothing for the next user
 who logs on. The fix: a logon task that runs a setup script **as the user logging on**.
 
-`Initialize-WSL-User.ps1` must do, in this order:
+**`kit/Initialize-WSL-User.ps1`** does three things in order: copies the networking
+profile into the user's own home, imports the shared image as that user's personal
+instance (marker-guarded so later logons skip it), then runs `wsl --shutdown` so the
+profile applies. Edit the distro name and image path at the top of the file.
 
-```powershell
-# 1. Personal networking profile (idempotent copy)
-Copy-Item C:\ProgramData\WSL-Kit\wslconfig.template "$env:USERPROFILE\.wslconfig" -Force
-
-# 2. Register RHEL for THIS user from the shared image (marker-guarded, offline)
-$marker = "$env:LOCALAPPDATA\WSL-Kit\rhel9.done"
-if (-not (Test-Path $marker)) {
-    wsl.exe --import RHEL-9 "$env:LOCALAPPDATA\WSL\RHEL-9" `
-        C:\ProgramData\WSL\distros\rhel-9.7-x86_64-wsl.tar.gz
-    New-Item -Force -ItemType File $marker | Out-Null
-}
-
-# 3. CRITICAL: restart the WSL VM so the profile from step 1 actually applies
-wsl.exe --shutdown
-```
-
-Install it as a scheduled task that fires for **every** interactive user:
-
-```powershell
-schtasks /Create /TN "WSL-InitUser" /SC ONLOGON /RL LIMITED `
-    /TR "powershell -NoProfile -ExecutionPolicy Bypass -File C:\ProgramData\WSL-Kit\Initialize-WSL-User.ps1"
-```
+Install the trigger with **`goldimage/Install-LogonTask.ps1`** — one scheduled task
+that fires for every interactive user.
 
 Two hard-won rules:
 - **`wsl --shutdown` is not optional** (gotcha G1). The `.wslconfig` is only read when
@@ -207,33 +169,29 @@ shell **as that user**, and `ip a` inside shows the **host's** corporate IP (not
 
 ## 5. Point RHEL at Red Hat Satellite (10 min)
 
-`C:\ProgramData\WSL-Kit\satellite.env` — all the site-specific values in ONE file:
+Satellite does the heavy lifting here — you don't hand-configure anything on the
+client. Use **global registration**:
+
+1. In the Satellite web UI: **Hosts → Register Host**.
+2. Pick your **organization**, the **activation key** from step 0 (its content view
+   must include RHEL 9 repos), and set the token lifetime long enough for your
+   rollout window.
+3. Satellite generates a one-line command (a `curl … | bash`). Paste it into
+   **`kit/register-satellite.sh.example`** and save it on the image as
+   `C:\ProgramData\WSL-Kit\register-satellite.sh` (the example file shows exactly
+   where it goes).
+
+Run it inside the distro (root shell):
 
 ```sh
-SATELLITE_IP=10.0.0.91
-SATELLITE_HOSTNAME=satellite-01
-SATELLITE_FQDN=satellite-01.example.internal
-SATELLITE_URL=https://satellite-01.example.internal
-# Quoted: multi-token values split into bare commands when sourced unquoted
-SATELLITE_HOST_ALIASES="satellite.example.internal"
-# The Satellite organization NAME — see gotcha G4
-SATELLITE_ORG=ExampleOrg
-SATELLITE_ACTIVATION_KEY=ak-rhel9-dev
-```
-
-`Configure-RHEL-Satellite.sh` (run inside the distro, as root) does four things:
-
-```sh
-set -a; . /mnt/c/ProgramData/WSL-Kit/satellite.env; set +a
-# 1. /etc/hosts pins (belt-and-braces against resolver hiccups)
-echo "$SATELLITE_IP $SATELLITE_FQDN $SATELLITE_HOSTNAME $SATELLITE_HOST_ALIASES" >> /etc/hosts
-# 2. Trust the Satellite CA
-dnf -y install "$SATELLITE_URL/pub/katello-ca-consumer-latest.noarch.rpm"
-# 3. Register with org + activation key
-subscription-manager register --org "$SATELLITE_ORG" --activationkey "$SATELLITE_ACTIVATION_KEY"
-# 4. Prove it
+bash /mnt/c/ProgramData/WSL-Kit/register-satellite.sh
+# then prove it:
 subscription-manager identity && dnf repolist
 ```
+
+That single command installs the Satellite CA trust, registers the host to your
+org with the activation key, and enables the content-view repos — no manual CA
+RPMs, no hand-written config.
 
 ✅ **Done when:** `subscription-manager identity` prints a consumer ID and
 `dnf repolist` lists repos from your content view. Then `dnf update` — if it resolves

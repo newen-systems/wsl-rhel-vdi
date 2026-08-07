@@ -1,0 +1,11 @@
+# Copied to each user's %USERPROFILE%\.wslconfig by Initialize-WSL-User.ps1.
+# Mirrored networking: WSL shares the Windows host's network identity, so
+# corporate DNS and routing work inside the distro with no extra plumbing.
+[wsl2]
+networkingMode=mirrored
+dnsTunneling=true
+firewall=true
+autoProxy=true
+
+[experimental]
+hostAddressLoopback=true

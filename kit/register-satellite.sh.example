@@ -1,0 +1,13 @@
+# Replace this file's contents with the registration command your Satellite
+# generates: web UI -> Hosts -> Register Host -> pick organization + activation
+# key -> copy the generated curl command below, then save this file as
+# register-satellite.sh (drop the .example suffix).
+#
+# Run inside the distro as root:
+#   bash /mnt/c/ProgramData/WSL-Kit/register-satellite.sh
+#
+# The generated command installs the Satellite CA trust, registers the host to
+# your organization with the activation key, and enables the content-view
+# repositories in one step.
+
+# curl -sS 'https://satellite-01.example.internal/register?activation_keys=ak-rhel9-dev&organization_id=1&...' -H 'Authorization: Bearer <generated>' | bash
