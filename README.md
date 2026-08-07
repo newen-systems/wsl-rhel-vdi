@@ -7,7 +7,12 @@ pulling updates from your **Red Hat Satellite** server. No Microsoft Store, no i
 on the guest.
 
 **What this is not:** a Windows deployment guide. Your existing gold image is the
-starting point.
+starting point — though `imagebuild/autounattend.xml.example` is included as an optional
+appendix if you build that image yourself.
+
+**No PowerShell allowed on your endpoints?** Every step here has a `cmd.exe` or GUI
+equivalent, and the whole thing packages for MECM / SCCM. See
+[MANUAL-SETUP.md](MANUAL-SETUP.md).
 
 **Repo layout — every script is ready to download and edit** (variables live in an
 `---- EDIT THESE ----` block at the top of each file):
@@ -17,6 +22,12 @@ kit/          -> copy to C:\ProgramData\WSL-Kit\ on the gold image
   wslconfig.template            networking profile every user receives
   Initialize-WSL-User.ps1       per-user setup, runs at logon
   register-satellite.sh.example paste your Satellite-generated command here
+mecm/         -> MECM / SCCM packaging, pure cmd (no PowerShell)
+  install-wsl-platform.cmd      App 1: features + WSL2 MSI, returns 3010 for reboot
+  stage-wsl-distros.cmd         App 2: stage images + wire per-user Active Setup
+  import-for-user.cmd           runs once per user at first logon
+imagebuild/
+  autounattend.xml.example      optional: Windows Setup answer file template
 goldimage/    -> run ON the gold image while building it
   Enable-WSL-Offline.ps1        step 1
   Set-CorporateDns.ps1          step 3
@@ -41,11 +52,12 @@ gold image.
 | 1 | WSL MSI installer (offline) | github.com/microsoft/WSL releases | `wsl.2.7.11.0.x64.msi` |
 | 2 | RHEL 9 WSL image | **Section 0b below** — download or build, no Linux box needed | `rhel-9.7-x86_64-wsl.tar.gz` |
 | 3 | A **registration command** generated in Satellite | Satellite web UI → Hosts → Register Host (pick org, activation key, set a generous token lifetime) | one `curl … \| bash` line |
-| 4 | A Satellite **activation key** whose content view includes RHEL 9 repos | Satellite web UI → Content → Activation Keys | `ak-rhel9-dev` |
+| 4 | A Satellite **activation key** whose content view includes RHEL 9 repos | Satellite web UI → Content → Activation Keys | `ak-rhel9-example` |
 | 5 | Your Satellite **organization NAME** (the word, not a number — see gotcha G4) | Satellite web UI → Administer → Organizations | `ExampleOrg` |
 
 **Platform prerequisites** (tell whoever owns the hypervisor):
-- The VDI VM needs **nested virtualization** exposed (`vhv.enable = TRUE` on vSphere).
+- The VDI VM needs **nested virtualization** exposed by the hypervisor (the setting is
+  platform-specific).
   WSL2 is a VM; without this it degrades or fails.
 - Windows 11 22H2 or later on the image (mirrored networking needs it).
 
@@ -224,7 +236,7 @@ All five pass → ship the image.
 | G5 | Registered fine, but `dnf repolist` is empty | Activation key's content view has no RHEL repos → fix the content view in Satellite, not the client |
 | G6 | Random per-user setup failures when several users initialize at once | WSL service races → serialize (one logon task, no parallel fan-out) |
 | G7 | Script "does nothing" in unattended context, works when pasted manually | Non-ASCII punctuation (em-dash, smart quotes) in a `.ps1`/`.cmd` → keep kit files pure ASCII |
-| G8 | `wsl` warns "Nested virtualization is not supported" | Hypervisor didn't expose VT-x/AMD-V to the VDI VM → platform setting (vSphere `vhv.enable`) |
+| G8 | `wsl` warns "Nested virtualization is not supported" | Hypervisor did not expose VT-x/AMD-V to the VDI VM - enable nested virtualisation for the guest |
 | G9 | Consumer registers with a NAT IP / odd hostname in Satellite facts | Registration ran before mirrored mode applied → G1 first, then register |
 | G10 | Every VDI user shows up in Satellite as the SAME host / registrations overwrite each other | The golden image was exported while registered → `subscription-manager clean` before `wsl --export` (path B step 3); register per-instance at deploy time only |
 
@@ -232,7 +244,7 @@ All five pass → ship the image.
 
 ## Provenance
 
-Proven end-to-end 2026-08-07 on a Windows 11 Pro 25H2 VDI template (vSphere, nested
+Proven end-to-end on a Windows 11 Pro 25H2 VDI template (nested
 virt on): three users each with their own offline RHEL 9 WSL2 instance, mirrored
 networking, internal DNS, registered to a Satellite-compatible content server and pulling updates from a
 RHEL 9 content view.

@@ -10,4 +10,4 @@
 # your organization with the activation key, and enables the content-view
 # repositories in one step.
 
-# curl -sS 'https://satellite-01.example.internal/register?activation_keys=ak-rhel9-dev&organization_id=1&...' -H 'Authorization: Bearer <generated>' | bash
+# curl -sS 'https://satellite-01.example.internal/register?activation_keys=ak-rhel9-example&organization_id=1&...' -H 'Authorization: Bearer <generated>' | bash

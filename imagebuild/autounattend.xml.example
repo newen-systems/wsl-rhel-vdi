@@ -1,0 +1,156 @@
+<?xml version="1.0" encoding="utf-8"?>
+<unattend xmlns="urn:schemas-microsoft-com:unattend">
+
+  <settings pass="windowsPE">
+    <component name="Microsoft-Windows-International-Core-WinPE"
+               processorArchitecture="amd64" language="neutral" versionScope="nonSxS"
+               publicKeyToken="31bf3856ad364e35"
+               xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+      <SetupUILanguage><UILanguage>en-US</UILanguage></SetupUILanguage>
+      <InputLocale>en-US</InputLocale>
+      <SystemLocale>en-US</SystemLocale>
+      <UILanguage>en-US</UILanguage>
+      <UserLocale>en-US</UserLocale>
+    </component>
+
+    <component name="Microsoft-Windows-Setup"
+               processorArchitecture="amd64" language="neutral" versionScope="nonSxS"
+               publicKeyToken="31bf3856ad364e35"
+               xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+      <!-- Win11 hardware-requirement bypasses. Harmless on the DISM path (setup.exe's
+           appraiser never runs there) but required if you ever fall back to GUI Setup. -->
+      <RunSynchronous>
+        <RunSynchronousCommand wcm:action="add"><Order>1</Order>
+          <Path>reg add HKLM\SYSTEM\Setup\LabConfig /v BypassTPMCheck /t REG_DWORD /d 1 /f</Path></RunSynchronousCommand>
+        <RunSynchronousCommand wcm:action="add"><Order>2</Order>
+          <Path>reg add HKLM\SYSTEM\Setup\LabConfig /v BypassSecureBootCheck /t REG_DWORD /d 1 /f</Path></RunSynchronousCommand>
+        <RunSynchronousCommand wcm:action="add"><Order>3</Order>
+          <Path>reg add HKLM\SYSTEM\Setup\LabConfig /v BypassRAMCheck /t REG_DWORD /d 1 /f</Path></RunSynchronousCommand>
+        <RunSynchronousCommand wcm:action="add"><Order>4</Order>
+          <Path>reg add HKLM\SYSTEM\Setup\LabConfig /v BypassCPUCheck /t REG_DWORD /d 1 /f</Path></RunSynchronousCommand>
+        <RunSynchronousCommand wcm:action="add"><Order>5</Order>
+          <Path>reg add HKLM\SYSTEM\Setup\LabConfig /v BypassStorageCheck /t REG_DWORD /d 1 /f</Path></RunSynchronousCommand>
+        <!-- OPTIONAL Order 6: only needed if you apply the image with DISM instead of
+             letting Setup do it. Your script must ALSO copy this answer file to
+             W:\Windows\Panther\unattend.xml and set the firmware boot order, because
+             a DISM apply bypasses setup.exe and nothing else stages it. -->
+        <RunSynchronousCommand wcm:action="add"><Order>6</Order>
+          <Path>cmd /c for %L in (C D E F G H I J K L M N O P Q R T U V X Y Z) do if exist %L:\Apply-OS.cmd call %L:\Apply-OS.cmd</Path></RunSynchronousCommand>
+      </RunSynchronous>
+      <UserData>
+        <AcceptEula>true</AcceptEula>
+        <!-- Generic KMS client key for the edition, or your own. -->
+        <ProductKey><Key>{{ WINDOWS_PRODUCT_KEY }}</Key></ProductKey>
+      </UserData>
+    </component>
+  </settings>
+
+  <settings pass="specialize">
+    <component name="Microsoft-Windows-Shell-Setup"
+               processorArchitecture="amd64" language="neutral" versionScope="nonSxS"
+               publicKeyToken="31bf3856ad364e35"
+               xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+      <ComputerName>{{ COMPUTER_NAME }}</ComputerName>
+      <TimeZone>{{ TIMEZONE }}</TimeZone>
+    </component>
+
+    <!-- Static IPv4. OPTIONAL - omit this whole component for DHCP.
+         Note specialize alone has not proven reliable here; the guest phase re-applies it. -->
+    <component name="Microsoft-Windows-TCPIP"
+               processorArchitecture="amd64" language="neutral" versionScope="nonSxS"
+               publicKeyToken="31bf3856ad364e35"
+               xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+      <Interfaces>
+        <Interface wcm:action="add">
+          <Identifier>Ethernet</Identifier>
+          <Ipv4Settings><DhcpEnabled>false</DhcpEnabled></Ipv4Settings>
+          <UnicastIpAddresses>
+            <IpAddress wcm:action="add" wcm:keyValue="1">{{ STATIC_IP }}/{{ PREFIX }}</IpAddress>
+          </UnicastIpAddresses>
+          <Routes>
+            <Route wcm:action="add">
+              <Identifier>1</Identifier><Prefix>0.0.0.0/0</Prefix>
+              <NextHopAddress>{{ GATEWAY }}</NextHopAddress>
+            </Route>
+          </Routes>
+        </Interface>
+      </Interfaces>
+    </component>
+
+    <component name="Microsoft-Windows-DNS-Client"
+               processorArchitecture="amd64" language="neutral" versionScope="nonSxS"
+               publicKeyToken="31bf3856ad364e35"
+               xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+      <Interfaces>
+        <Interface wcm:action="add">
+          <Identifier>Ethernet</Identifier>
+          <DNSServerSearchOrder>
+            <IpAddress wcm:action="add" wcm:keyValue="1">{{ DNS_SERVER }}</IpAddress>
+          </DNSServerSearchOrder>
+        </Interface>
+      </Interfaces>
+    </component>
+
+    <!-- Enable RDP + allow it through the firewall. Drop both if not wanted. -->
+    <component name="Microsoft-Windows-TerminalServices-LocalSessionManager"
+               processorArchitecture="amd64" language="neutral" versionScope="nonSxS"
+               publicKeyToken="31bf3856ad364e35"
+               xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+      <fDenyTSConnections>false</fDenyTSConnections>
+    </component>
+    <component name="Networking-MPSSVC-Svc"
+               processorArchitecture="amd64" language="neutral" versionScope="nonSxS"
+               publicKeyToken="31bf3856ad364e35"
+               xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+      <FirewallGroups>
+        <FirewallGroup wcm:action="add" wcm:keyValue="RDP">
+          <Active>true</Active><Group>Remote Desktop</Group><Profile>all</Profile>
+        </FirewallGroup>
+      </FirewallGroups>
+    </component>
+  </settings>
+
+  <settings pass="oobeSystem">
+    <component name="Microsoft-Windows-International-Core"
+               processorArchitecture="amd64" language="neutral" versionScope="nonSxS"
+               publicKeyToken="31bf3856ad364e35"
+               xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+      <InputLocale>en-US</InputLocale><SystemLocale>en-US</SystemLocale>
+      <UILanguage>en-US</UILanguage><UserLocale>en-US</UserLocale>
+    </component>
+
+    <component name="Microsoft-Windows-Shell-Setup"
+               processorArchitecture="amd64" language="neutral" versionScope="nonSxS"
+               publicKeyToken="31bf3856ad364e35"
+               xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+      <OOBE>
+        <HideEULAPage>true</HideEULAPage>
+        <HideOEMRegistrationScreen>true</HideOEMRegistrationScreen>
+        <HideOnlineAccountScreens>true</HideOnlineAccountScreens>
+        <HideWirelessSetupInOOBE>true</HideWirelessSetupInOOBE>
+        <ProtectYourPC>3</ProtectYourPC>
+      </OOBE>
+      <UserAccounts>
+        <AdministratorPassword>
+          <Value>{{ ADMIN_PASSWORD }}</Value>
+          <PlainText>true</PlainText>
+        </AdministratorPassword>
+      </UserAccounts>
+      <AutoLogon>
+        <Enabled>true</Enabled>
+        <LogonCount>1</LogonCount>
+        <Username>Administrator</Username>
+        <Password><Value>{{ ADMIN_PASSWORD }}</Value><PlainText>true</PlainText></Password>
+      </AutoLogon>
+      <FirstLogonCommands>
+        <!-- Runs once at first logon. Keep this PURE ASCII - a UTF-8 em-dash here
+             breaks parsing silently and the kit never stages. -->
+        <SynchronousCommand wcm:action="add">
+          <Order>1</Order>
+          <CommandLine>cmd /c {{ FIRSTBOOT_COMMAND }}</CommandLine>
+          <Description>stage kit</Description>
+        </SynchronousCommand>
+      </FirstLogonCommands>
+    </component>
+  </settings>
+</unattend>
